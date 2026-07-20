@@ -1,0 +1,9 @@
+click>=8.1.0
+rich>=13.7.0
+
+# Dev / test
+pytest>=8.2.0
+ruff>=0.4.0
+cyclonedx-python-lib[validation]>=7.0.0    # real CycloneDX schema validation in tests -- [validation] extra provides jsonschema, without which JsonStrictValidator can't even import
+build
+twine
