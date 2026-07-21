@@ -7,6 +7,7 @@ import pytest
 from sbom_audit.core.cra_mapping import CRAStatus, map_findings_to_cra
 from sbom_audit.core.manifest_parser import Package, parse_manifests
 from sbom_audit.core.models import Finding, Severity
+from sbom_audit.core.provenance_check import ProvenanceStatus, check_provenance
 from sbom_audit.core.sbom_generator import generate_sbom
 from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
 
@@ -307,3 +308,103 @@ class TestCRAMapping:
         by_point = {r.point: r for r in requirements}
         for point in ("4", "5", "6", "7", "8"):
             assert by_point[point].status == CRAStatus.NOT_AUTOMATABLE
+
+
+class TestProvenanceCheck:
+    """Registry attestation queries are mocked at the HTTP transport
+    layer only (same pattern as OSV.dev in TestVulnerabilityCheck), not
+    at the parsing/decision logic."""
+
+    def test_npm_package_with_attestations_is_attested(self):
+        class FakeResponse:
+            def read(self):
+                return json.dumps({"attestations": [{"predicateType": "https://slsa.dev/provenance/v1"}]}).encode()
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        results = check_provenance(
+            [Package(name="express", version="4.18.2", ecosystem="npm")],
+            urlopen_fn=lambda req, timeout: FakeResponse(),
+        )
+        assert results[0].status == ProvenanceStatus.ATTESTED
+
+    def test_npm_package_without_attestations_returns_404(self):
+        import urllib.error
+
+        def fake_urlopen(req, timeout):
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+        results = check_provenance(
+            [Package(name="left-pad", version="1.3.0", ecosystem="npm")], urlopen_fn=fake_urlopen,
+        )
+        assert results[0].status == ProvenanceStatus.NOT_ATTESTED
+
+    def test_npm_network_error_is_check_failed(self):
+        import urllib.error
+
+        def fake_urlopen(req, timeout):
+            raise urllib.error.URLError("simulated network failure")
+
+        results = check_provenance(
+            [Package(name="express", version="4.18.2", ecosystem="npm")], urlopen_fn=fake_urlopen,
+        )
+        assert results[0].status == ProvenanceStatus.CHECK_FAILED
+
+    def test_pypi_package_with_provenance_is_attested(self):
+        class FakeResponse:
+            def read(self):
+                return json.dumps({"files": [
+                    {"filename": "sampleproject-1.0.0-py3-none-any.whl", "provenance": "https://pypi.org/x"},
+                    {"filename": "sampleproject-1.0.0.tar.gz", "provenance": "https://pypi.org/y"},
+                ]}).encode()
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        results = check_provenance(
+            [Package(name="sampleproject", version="1.0.0", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: FakeResponse(),
+        )
+        assert results[0].status == ProvenanceStatus.ATTESTED
+
+    def test_pypi_package_without_provenance_is_not_attested(self):
+        class FakeResponse:
+            def read(self):
+                return json.dumps({"files": [
+                    {"filename": "requests-2.31.0-py3-none-any.whl", "provenance": None},
+                    {"filename": "requests-2.31.0.tar.gz", "provenance": None},
+                ]}).encode()
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        results = check_provenance(
+            [Package(name="requests", version="2.31.0", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: FakeResponse(),
+        )
+        assert results[0].status == ProvenanceStatus.NOT_ATTESTED
+
+    def test_pypi_version_not_in_file_list_is_check_failed(self):
+        class FakeResponse:
+            def read(self):
+                return json.dumps({"files": [
+                    {"filename": "requests-2.30.0-py3-none-any.whl", "provenance": None},
+                ]}).encode()
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        results = check_provenance(
+            [Package(name="requests", version="2.31.0", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: FakeResponse(),
+        )
+        assert results[0].status == ProvenanceStatus.CHECK_FAILED
+
+    def test_go_ecosystem_is_unsupported(self):
+        results = check_provenance([Package(name="github.com/pkg/errors", version="v0.9.1", ecosystem="Go")])
+        assert results[0].status == ProvenanceStatus.UNSUPPORTED_ECOSYSTEM

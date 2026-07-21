@@ -34,6 +34,15 @@ Early, actively developed. Currently covers:
   organizational/process requirements (disclosure policy, security
   contact, update distribution) are always reported NOT_AUTOMATABLE.
   Informational only — not legal advice or a compliance certification.
+- **`provenance-check`** — reports whether npm/PyPI dependencies have a
+  Sigstore-backed provenance attestation on file with the registry
+  (npm's attestations endpoint; PyPI's Simple Repository API, the only
+  PyPI surface that carries the PEP 740 `provenance` field). This
+  checks that the registry already validated the attestation against
+  Sigstore at publish time — not a from-scratch client-side Rekor/
+  Fulcio re-verification of the raw bundle. Go has no standard
+  Sigstore-based provenance mechanism yet and is reported as
+  `UNSUPPORTED_ECOSYSTEM`.
 
 See [ROADMAP.md](ROADMAP.md) for what's planned next.
 
@@ -52,6 +61,7 @@ sbom-audit generate /path/to/your/project --output sbom.json
 sbom-audit scan /path/to/your/project
 sbom-audit scan /path/to/your/project --json findings.json
 sbom-audit cra-report /path/to/your/project --output cra.json
+sbom-audit provenance-check /path/to/your/project --json provenance.json
 ```
 
 ## Project structure
@@ -59,16 +69,18 @@ sbom-audit cra-report /path/to/your/project --output cra.json
 ```
 sbom-audit/
 ├── sbom_audit/
-│   ├── cli.py                  # generate, scan, cra-report
+│   ├── cli.py                  # generate, scan, cra-report, provenance-check
 │   ├── core/
 │   │   ├── manifest_parser.py  # Python/npm/Go manifests -> normalized packages
 │   │   ├── sbom_generator.py   # real CycloneDX 1.5 JSON generation
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
 │   │   ├── cra_mapping.py      # SBOM/scan results -> CRA Annex I Part II mapping
+│   │   ├── provenance_check.py # npm/PyPI registry Sigstore attestation lookup
 │   │   └── models.py
 │   └── reports/
-│       ├── terminal.py         # scan findings table
-│       └── cra_report.py       # CRA mapping table + JSON
+│       ├── terminal.py           # scan findings table
+│       ├── cra_report.py         # CRA mapping table + JSON
+│       └── provenance_report.py  # provenance table + JSON
 ├── tests/test_sbom_audit.py    # includes real CycloneDX schema validation
 └── .github/workflows/ci.yml
 ```
