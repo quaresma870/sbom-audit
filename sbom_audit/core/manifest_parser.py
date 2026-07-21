@@ -23,6 +23,7 @@ class Package:
     name: str
     version: str
     ecosystem: str = "PyPI"
+    source_file: str = ""
 
 
 def _parse_requirements_txt(path: Path) -> list[Package]:
@@ -33,7 +34,7 @@ def _parse_requirements_txt(path: Path) -> list[Package]:
             continue
         m = re.match(r"^([A-Za-z0-9_.\-]+)\s*(?:==|>=|<=|~=|!=|>|<)\s*([^\s;#,]+)", line)
         if m:
-            packages.append(Package(name=m.group(1), version=m.group(2).strip(",")))
+            packages.append(Package(name=m.group(1), version=m.group(2).strip(","), source_file=path.name))
     return packages
 
 
@@ -57,7 +58,7 @@ def _parse_pyproject_toml(path: Path) -> list[Package]:
     for dep in raw_deps:
         m = re.match(r"^([A-Za-z0-9_.\-]+)\s*(?:==|>=|<=|~=|!=)\s*([^\s;,]+)", dep)
         if m:
-            packages.append(Package(name=m.group(1), version=m.group(2).strip(",")))
+            packages.append(Package(name=m.group(1), version=m.group(2).strip(","), source_file=path.name))
     return packages
 
 
@@ -80,7 +81,7 @@ def _parse_package_json(path: Path) -> list[Package]:
     for name, spec in raw_deps.items():
         m = re.match(r"^(?:\^|~|>=|<=|>|<|=)*\s*(\d[\w.\-]*)", spec.strip())
         if m:
-            packages.append(Package(name=name, version=m.group(1), ecosystem="npm"))
+            packages.append(Package(name=name, version=m.group(1), ecosystem="npm", source_file=path.name))
     return packages
 
 
@@ -100,21 +101,21 @@ def _parse_package_lock_json(path: Path) -> list[Package]:
             if not pkg_path or "version" not in info:
                 continue
             name = pkg_path.rsplit("node_modules/", 1)[-1]
-            packages.append(Package(name=name, version=info["version"], ecosystem="npm"))
+            packages.append(Package(name=name, version=info["version"], ecosystem="npm", source_file=path.name))
         return packages
 
-    return _walk_lockfile_v1_deps(data.get("dependencies") or {})
+    return _walk_lockfile_v1_deps(data.get("dependencies") or {}, path.name)
 
 
-def _walk_lockfile_v1_deps(deps: dict) -> list[Package]:
+def _walk_lockfile_v1_deps(deps: dict, source_file: str) -> list[Package]:
     packages = []
     for name, info in deps.items():
         version = info.get("version")
         if version:
-            packages.append(Package(name=name, version=version, ecosystem="npm"))
+            packages.append(Package(name=name, version=version, ecosystem="npm", source_file=source_file))
         nested = info.get("dependencies")
         if nested:
-            packages.extend(_walk_lockfile_v1_deps(nested))
+            packages.extend(_walk_lockfile_v1_deps(nested, source_file))
     return packages
 
 
@@ -132,7 +133,7 @@ def _parse_toml_lock(path: Path) -> list[Package]:
     for pkg in data.get("package", []):
         name, version = pkg.get("name"), pkg.get("version")
         if name and version:
-            packages.append(Package(name=name, version=version))
+            packages.append(Package(name=name, version=version, source_file=path.name))
     return packages
 
 
@@ -156,7 +157,7 @@ def _parse_go_mod(path: Path) -> list[Package]:
         else:
             m = re.match(r"^require\s+(\S+)\s+(v\S+)", stripped)
         if m:
-            packages.append(Package(name=m.group(1), version=m.group(2), ecosystem="Go"))
+            packages.append(Package(name=m.group(1), version=m.group(2), ecosystem="Go", source_file=path.name))
     return packages
 
 
@@ -177,7 +178,7 @@ def _parse_go_sum(path: Path) -> list[Package]:
         if (module, version) in seen:
             continue
         seen.add((module, version))
-        packages.append(Package(name=module, version=version, ecosystem="Go"))
+        packages.append(Package(name=module, version=version, ecosystem="Go", source_file=path.name))
     return packages
 
 
