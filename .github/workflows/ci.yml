@@ -51,7 +51,7 @@ jobs:
       - name: Install built wheel in a clean venv
         run: |
           python -m venv /tmp/smoke-venv
-          /tmp/smoke-venv/bin/pip install "$(echo dist/*.whl)"
+          /tmp/smoke-venv/bin/pip install "$(echo dist/*.whl)[verify]"
           /tmp/smoke-venv/bin/sbom-audit --version
           /tmp/smoke-venv/bin/sbom-audit --help
 
@@ -238,6 +238,25 @@ jobs:
           assert by_pkg['click'] == 'NOT_ATTESTED', by_pkg
           assert by_pkg['express'] == 'NOT_ATTESTED', by_pkg
           print('OK: provenance-check completed against real npm + PyPI registries')
+          "
+          echo "::endgroup::"
+
+          echo "::group::provenance-check --verify — real sigstore-python re-verification (needs tuf-repo-cdn.sigstore.dev, not reachable from local dev sandbox)"
+          $SA provenance-check "$PROV_DIR" --verify --json /tmp/provenance_verified.json
+          cat /tmp/provenance_verified.json
+          python3 -c "
+          import json
+          results = json.load(open('/tmp/provenance_verified.json'))
+          by_pkg = {r['package']: r.get('verification') for r in results}
+          # Both pip and sigstore are ATTESTED (checked above), so both
+          # get independently re-verified here. VERIFIED is the
+          # expected outcome for real, currently-valid attestations on
+          # real, unmodified packages.
+          assert by_pkg['pip']['status'] == 'VERIFIED', by_pkg
+          assert by_pkg['sigstore']['status'] == 'VERIFIED', by_pkg
+          assert by_pkg['click'] is None, by_pkg
+          assert by_pkg['express'] is None, by_pkg
+          print('OK: provenance-check --verify completed real Sigstore re-verification')
           "
           echo "::endgroup::"
 

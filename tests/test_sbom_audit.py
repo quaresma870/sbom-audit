@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -8,7 +9,8 @@ from sbom_audit.core.cra_mapping import CRAStatus, map_findings_to_cra
 from sbom_audit.core.license_lookup import LicenseResult, check_licenses
 from sbom_audit.core.manifest_parser import Package, parse_manifests
 from sbom_audit.core.models import Finding, Severity
-from sbom_audit.core.provenance_check import ProvenanceStatus, check_provenance
+from sbom_audit.core.provenance_check import ProvenanceResult, ProvenanceStatus, check_provenance
+from sbom_audit.core.provenance_verify import VerificationStatus, verify_provenance
 from sbom_audit.core.sbom_generator import generate_sbom
 from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
 from sbom_audit.reports.sarif_report import build_sarif
@@ -650,3 +652,156 @@ class TestLicenseLookup:
         )
         assert results[0].spdx_id is None
         assert results[0].name is None
+
+
+class TestProvenanceVerify:
+    """Only the HTTP transport (registry JSON) and the actual
+    cryptographic verifier call are mocked — everything in between
+    (Bundle.from_json parsing a real captured npm attestation,
+    Provenance.model_validate_json parsing a realistic PyPI payload,
+    repository-URL normalization) is real code. sigstore-python's own
+    trust-root fetch needs network access this sandbox doesn't have
+    (same limitation as api.osv.dev), so the crypto verifier itself is
+    injected here and exercised for real in CI."""
+
+    _NPM_BUNDLE = json.loads((Path(__file__).parent / "fixtures" / "npm_slsa_bundle.json").read_text())
+
+    class _FakeResponse:
+        def __init__(self, payload, raw=False):
+            self._payload = payload
+            self._raw = raw
+        def read(self):
+            return self._payload if self._raw else json.dumps(self._payload).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def _npm_urlopen(self, repository):
+        def fake(req, timeout):
+            if "attestations" in req.full_url:
+                return self._FakeResponse({
+                    "attestations": [{"predicateType": "https://slsa.dev/provenance/v1", "bundle": self._NPM_BUNDLE}]
+                })
+            return self._FakeResponse({"repository": repository})
+        return fake
+
+    def test_only_attested_results_are_reverified(self):
+        pkg = Package(name="x", version="1.0", ecosystem="npm")
+        not_attested = ProvenanceResult(pkg, ProvenanceStatus.NOT_ATTESTED, "no attestation")
+
+        def fake_urlopen(req, timeout):
+            raise AssertionError("should not fetch anything for a non-ATTESTED result")
+
+        out = verify_provenance([not_attested], urlopen_fn=fake_urlopen)
+        assert out == []
+
+    def test_npm_real_bundle_verifies_with_fake_verifier(self):
+        pkg = Package(name="sigstore", version="5.0.0", ecosystem="npm")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                return ("application/vnd.in-toto+json", b"{}")
+
+        out = verify_provenance(
+            [attested],
+            urlopen_fn=self._npm_urlopen({"url": "git+https://github.com/sigstore/sigstore-js.git"}),
+            verifier=FakeVerifier(),
+        )
+        assert out[0].status == VerificationStatus.VERIFIED
+        assert "sigstore/sigstore-js" in out[0].detail
+
+    def test_npm_verification_failure_is_reported(self):
+        from sigstore.errors import VerificationError
+
+        pkg = Package(name="sigstore", version="5.0.0", ecosystem="npm")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        class FailingVerifier:
+            def verify_dsse(self, bundle, policy):
+                raise VerificationError("certificate identity mismatch")
+
+        out = verify_provenance(
+            [attested],
+            urlopen_fn=self._npm_urlopen({"url": "git+https://github.com/sigstore/sigstore-js.git"}),
+            verifier=FailingVerifier(),
+        )
+        assert out[0].status == VerificationStatus.VERIFICATION_FAILED
+
+    def test_npm_no_declared_repository_is_skipped(self):
+        pkg = Package(name="sigstore", version="5.0.0", ecosystem="npm")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        out = verify_provenance(
+            [attested], urlopen_fn=self._npm_urlopen(None), verifier="unused-should-not-be-called",
+        )
+        assert out[0].status == VerificationStatus.SKIPPED
+
+    def test_npm_repo_url_variants_normalize_to_owner_repo(self):
+        from sbom_audit.core.provenance_verify import _npm_repo_to_owner_repo
+
+        assert _npm_repo_to_owner_repo("git+https://github.com/sigstore/sigstore-js.git") == "sigstore/sigstore-js"
+        assert _npm_repo_to_owner_repo("github:foo/bar") == "foo/bar"
+        assert _npm_repo_to_owner_repo({"url": "git://github.com/foo/bar.git"}) == "foo/bar"
+        assert _npm_repo_to_owner_repo(None) is None
+        assert _npm_repo_to_owner_repo("not-a-github-url") is None
+
+    def _pypi_urlopen(self, provenance_payload):
+        def fake(req, timeout):
+            if "simple" in req.full_url:
+                return self._FakeResponse({
+                    "files": [{
+                        "filename": "pip-26.1.2.tar.gz", "provenance": "https://pypi.org/x",
+                        "hashes": {"sha256": "abc123"},
+                    }]
+                })
+            return self._FakeResponse(json.dumps(provenance_payload).encode(), raw=True)
+        return fake
+
+    _FAKE_PYPI_PROVENANCE = {
+        "version": 1,
+        "attestation_bundles": [{
+            "publisher": {"kind": "GitHub", "repository": "pypa/pip", "workflow": "release.yml"},
+            "attestations": [{
+                "version": 1,
+                "verification_material": {"certificate": "ZmFrZQ==", "transparency_entries": [{"fake": "entry"}]},
+                "envelope": {"statement": "ZmFrZQ==", "signature": "ZmFrZQ=="},
+            }],
+        }],
+    }
+
+    def test_pypi_verifies_with_fake_verify_fn(self):
+        pkg = Package(name="pip", version="26.1.2", ecosystem="PyPI")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        out = verify_provenance(
+            [attested],
+            urlopen_fn=self._pypi_urlopen(self._FAKE_PYPI_PROVENANCE),
+            pypi_verify_fn=lambda identity, dist: None,
+        )
+        assert out[0].status == VerificationStatus.VERIFIED
+
+    def test_pypi_verification_failure_is_reported(self):
+        from pypi_attestations import VerificationError
+
+        def failing_verify(identity, dist):
+            raise VerificationError("digest mismatch")
+
+        pkg = Package(name="pip", version="26.1.2", ecosystem="PyPI")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        out = verify_provenance(
+            [attested], urlopen_fn=self._pypi_urlopen(self._FAKE_PYPI_PROVENANCE), pypi_verify_fn=failing_verify,
+        )
+        assert out[0].status == VerificationStatus.VERIFICATION_FAILED
+
+    def test_pypi_no_attested_file_is_skipped(self):
+        pkg = Package(name="pip", version="99.99.99", ecosystem="PyPI")
+        attested = ProvenanceResult(pkg, ProvenanceStatus.ATTESTED, "attested")
+
+        def fake_urlopen(req, timeout):
+            return self._FakeResponse({"files": [{"filename": "pip-1.0.0.tar.gz", "provenance": None}]})
+
+        out = verify_provenance([attested], urlopen_fn=fake_urlopen, pypi_verify_fn=lambda i, d: None)
+        assert out[0].status == VerificationStatus.SKIPPED

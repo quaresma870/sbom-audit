@@ -1,6 +1,10 @@
 click>=8.1.0
 rich>=13.7.0
 
+# Optional: provenance-check --verify (independent sigstore/cosign re-verification)
+sigstore>=4.4.0
+pypi-attestations>=0.0.29
+
 # Dev / test
 pytest>=8.2.0
 ruff>=0.4.0
