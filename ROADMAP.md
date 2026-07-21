@@ -102,13 +102,39 @@ these two yet — no equivalent lean per-version registry endpoint was
 established for either, so they're skipped without a network call,
 same as Go.
 
+### Independent sigstore/cosign re-verification
+`provenance-check --verify` re-verifies ATTESTED packages' Sigstore
+bundles for real via sigstore-python/pypi-attestations (an optional
+`[verify]` extra — heavy dependency, so it's opt-in), rather than
+trusting the registry's own claim. Confirmed against real, live
+attestation data before writing this: npm's attestations endpoint
+returns two attestation types per package, and only the
+`https://slsa.dev/provenance/v1` one carries a real Fulcio certificate
+(the other, npm's own "publish/v0.1" predicate, uses a static key hint
+instead); PyPI's PEP 740 provenance bundle is a different wrapper
+format entirely, handled via the official `pypi-attestations` library
+rather than hand-rolled. Deliberately does NOT use sigstore-python's
+`UnsafeNoOp` policy — its own docs call it "fundamentally insecure...
+must only be used for testing purposes", since it skips checking *who*
+signed a bundle, and anyone can obtain a validly-chained Fulcio
+certificate. Instead: for PyPI, the expected publisher identity comes
+from `AttestationBundle.publisher`, which PyPI's own Trusted
+Publishing config already ties to the project server-side (a stronger
+signal than anything read from the package's own metadata); for npm,
+there's no equivalent public "expected publisher" record, so the
+expected GitHub repository is read from the package's own npm registry
+`repository` field instead — weaker (a malicious package could declare
+any repository), but still confirms a real GitHub Actions OIDC
+signing identity for *some* concrete repository. Both paths need
+network access to Sigstore's own infrastructure
+(tuf-repo-cdn.sigstore.dev for the trust root) in addition to the
+registry APIs — like api.osv.dev, unreachable from this repo's own
+sandboxed dev environment, so exercised for real in CI. Results
+degrade to `CHECK_FAILED` rather than crashing when that trust-root
+fetch fails (a real bug caught during manual testing: the fetch call
+was originally outside the try/except).
+
 ## Next
 
-### Independent sigstore/cosign re-verification
-`provenance-check` currently trusts that npm/PyPI already validated a
-package's attestation against Sigstore at publish time. A deeper pass
-would add real client-side Rekor/Fulcio re-verification (via
-sigstore-python) for packages that report ATTESTED, closing the gap
-between "the registry says this is verified" and "this tool
-independently confirmed it" — at the cost of a much heavier dependency
-and downloading each artifact.
+Nothing currently queued — all items raised in the last recommendation
+pass have shipped.

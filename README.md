@@ -49,7 +49,15 @@ Early, actively developed. Currently covers:
   Sigstore at publish time — not a from-scratch client-side Rekor/
   Fulcio re-verification of the raw bundle. Go has no standard
   Sigstore-based provenance mechanism yet and is reported as
-  `UNSUPPORTED_ECOSYSTEM`.
+  `UNSUPPORTED_ECOSYSTEM`. `--verify` does that deeper re-verification
+  for real, via the optional `[verify]` extra (`sigstore-python` +
+  `pypi-attestations` — a heavy dependency, so it's opt-in): confirms
+  the Fulcio certificate chain, Rekor transparency log inclusion, and
+  signing identity (PyPI: against the project's own Trusted Publisher
+  config; npm: against the package's declared GitHub repository).
+  Deliberately does not use sigstore-python's `UnsafeNoOp` policy,
+  which skips identity checks entirely and is documented as
+  "fundamentally insecure... must only be used for testing purposes".
 
 See [ROADMAP.md](ROADMAP.md) for what's planned next.
 
@@ -59,6 +67,9 @@ See [ROADMAP.md](ROADMAP.md) for what's planned next.
 git clone https://github.com/quaresma870/sbom-audit.git
 cd sbom-audit
 pip install .
+
+# Optional: for `provenance-check --verify` (independent sigstore/cosign re-verification)
+pip install ".[verify]"
 ```
 
 ## Quickstart
@@ -71,6 +82,7 @@ sbom-audit scan /path/to/your/project --json findings.json
 sbom-audit scan /path/to/your/project --sarif results.sarif
 sbom-audit cra-report /path/to/your/project --output cra.json
 sbom-audit provenance-check /path/to/your/project --json provenance.json
+sbom-audit provenance-check /path/to/your/project --verify
 ```
 
 ## Project structure
@@ -85,13 +97,14 @@ sbom-audit/
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
 │   │   ├── cra_mapping.py      # SBOM/scan results -> CRA Annex I Part II mapping
 │   │   ├── provenance_check.py # npm/PyPI registry Sigstore attestation lookup
+│   │   ├── provenance_verify.py # real sigstore-python/pypi-attestations re-verification, for --verify
 │   │   ├── license_lookup.py   # npm/PyPI registry license lookup, for --licenses
 │   │   └── models.py
 │   └── reports/
 │       ├── terminal.py           # scan findings table
 │       ├── sarif_report.py       # scan findings -> SARIF 2.1.0
 │       ├── cra_report.py         # CRA mapping table + JSON
-│       └── provenance_report.py  # provenance table + JSON
+│       └── provenance_report.py  # provenance + verification tables
 ├── tests/test_sbom_audit.py    # includes real CycloneDX schema validation
 └── .github/workflows/ci.yml
 ```

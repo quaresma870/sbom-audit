@@ -147,13 +147,18 @@ def cra_report(project_dir, output, name):
 @cli.command(name="provenance-check")
 @click.argument("project_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--json", "json_output", default=None, type=click.Path())
-def provenance_check(project_dir, json_output):
+@click.option("--verify", "do_verify", is_flag=True, default=False,
+              help="Independently re-verify ATTESTED packages' Sigstore bundles "
+                   "(Fulcio certificate chain, Rekor log inclusion, and signing "
+                   "identity) instead of trusting the registry's own claim. "
+                   "Requires the 'verify' extra: pip install sbom-audit[verify].")
+def provenance_check(project_dir, json_output, do_verify):
     """Check whether npm/PyPI dependencies have a Sigstore-backed
     provenance attestation on file with the registry. Checks registry
     metadata, not a from-scratch client-side Rekor/Fulcio re-verification
-    of the raw attestation bundle."""
+    of the raw attestation bundle — pass --verify for that."""
     from sbom_audit.core.manifest_parser import parse_manifests
-    from sbom_audit.core.provenance_check import check_provenance
+    from sbom_audit.core.provenance_check import ProvenanceStatus, check_provenance
     from sbom_audit.reports.provenance_report import print_provenance_report
 
     project_dir = Path(project_dir)
@@ -167,11 +172,38 @@ def provenance_check(project_dir, json_output):
     results = check_provenance(packages)
     print_provenance_report(str(project_dir), results)
 
+    verification_results = []
+    if do_verify:
+        attested = [r for r in results if r.status == ProvenanceStatus.ATTESTED]
+        if attested:
+            from sbom_audit.core.provenance_verify import verify_provenance
+            from sbom_audit.reports.provenance_report import print_verification_report
+
+            console.print(f"Independently re-verifying {len(attested)} attested package(s)...")
+            try:
+                verification_results = verify_provenance(results)
+            except ImportError:
+                console.print(
+                    "[red]✘[/red] --verify requires the 'verify' extra: "
+                    "pip install sbom-audit\\[verify]"
+                )
+                sys.exit(1)
+            print_verification_report(str(project_dir), verification_results)
+
     if json_output:
         import json
 
+        verification_by_pkg = {(v.package.name, v.package.version): v for v in verification_results}
+        payload = []
+        for r in results:
+            entry = r.to_dict()
+            v = verification_by_pkg.get((r.package.name, r.package.version))
+            if v:
+                entry["verification"] = {"status": v.status.value, "detail": v.detail}
+            payload.append(entry)
+
         with open(json_output, "w") as f:
-            json.dump([r.to_dict() for r in results], f, indent=2)
+            json.dump(payload, f, indent=2)
         console.print(f"[green]✔[/green] Wrote {len(results)} result(s) to {json_output}")
 
 
