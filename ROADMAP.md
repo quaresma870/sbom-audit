@@ -11,14 +11,16 @@
 - CI: builds the real wheel, installs it in a clean venv, and runs a
   real `scan` against real OSV.dev.
 
-## Next
-
 ### More ecosystems
-v0.1 only parses Python manifests (requirements.txt, pyproject.toml).
-Node.js (package.json/package-lock.json) and Go (go.sum) support
-already exists as a proven pattern in the sibling secureaudit repo's
-own CVE plugin — porting that parsing logic here is the natural next
-step, not a new design.
+`generate`/`scan` now also parse Node.js manifests (package.json
+declared ranges, package-lock.json exact resolved versions — both the
+current "packages" lockfile format and the legacy nested
+"dependencies" v1 format) and Go manifests (go.mod require directives,
+go.sum exact resolved versions). `parse_manifests` checks for all of
+these alongside requirements.txt/pyproject.toml and unions whatever it
+finds, so a polyglot repo gets a single combined SBOM/scan.
+
+## Next
 
 ### sigstore/cosign provenance verification
 Verifying that a package's supply-chain provenance is signed/attested,

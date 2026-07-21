@@ -13,18 +13,19 @@ target's own infrastructure.
 
 ## Status
 
-Early, actively developed. v0.1 covers:
+Early, actively developed. Currently covers:
 
 - **`generate`** — produces a real, schema-valid CycloneDX 1.5 JSON SBOM
-  from a Python project's `requirements.txt` and/or `pyproject.toml`.
-  Validated against the official CycloneDX JSON schema (via
-  `cyclonedx-python-lib`) in this repo's own test suite, not just an
-  internal shape assumption.
-- **`scan`** — checks a project's dependencies against
-  [OSV.dev](https://osv.dev)'s free, open vulnerability database. Query
-  pattern adapted directly from the sibling
-  [secureaudit](https://github.com/quaresma870/secureaudit) repo's
-  already-proven CVE plugin.
+  from a project's dependency manifests: Python (`requirements.txt`,
+  `pyproject.toml`), Node.js (`package.json`, `package-lock.json`), and
+  Go (`go.mod`, `go.sum`). Validated against the official CycloneDX
+  JSON schema (via `cyclonedx-python-lib`) in this repo's own test
+  suite, not just an internal shape assumption.
+- **`scan`** — checks a project's dependencies (across all supported
+  ecosystems above) against [OSV.dev](https://osv.dev)'s free, open
+  vulnerability database. Query pattern adapted directly from the
+  sibling [secureaudit](https://github.com/quaresma870/secureaudit)
+  repo's already-proven CVE plugin.
 
 See [ROADMAP.md](ROADMAP.md) for what's planned next.
 
@@ -51,7 +52,7 @@ sbom-audit/
 ├── sbom_audit/
 │   ├── cli.py                  # generate, scan
 │   ├── core/
-│   │   ├── manifest_parser.py  # requirements.txt / pyproject.toml -> normalized packages
+│   │   ├── manifest_parser.py  # Python/npm/Go manifests -> normalized packages
 │   │   ├── sbom_generator.py   # real CycloneDX 1.5 JSON generation
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
 │   │   └── models.py

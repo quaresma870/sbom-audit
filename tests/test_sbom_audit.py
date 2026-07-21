@@ -49,6 +49,81 @@ class TestManifestParsing:
         packages = parse_manifests(tmp_path)
         assert {p.name for p in packages} == {"click"}
 
+    def test_parses_package_json(self, tmp_path):
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "x",
+            "dependencies": {"express": "^4.18.2", "lodash": "4.17.21"},
+            "devDependencies": {"jest": "~29.7.0"},
+            "optionalDependencies": {"fsevents": "*"},
+        }))
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p for p in packages}
+        assert set(by_name) == {"express", "lodash", "jest"}
+        assert by_name["express"].version == "4.18.2"
+        assert by_name["express"].ecosystem == "npm"
+        assert by_name["lodash"].version == "4.17.21"
+        assert by_name["jest"].version == "29.7.0"
+
+    def test_package_json_malformed_does_not_crash(self, tmp_path):
+        (tmp_path / "package.json").write_text("not valid json {")
+        assert parse_manifests(tmp_path) == []
+
+    def test_parses_package_lock_json_v3(self, tmp_path):
+        (tmp_path / "package-lock.json").write_text(json.dumps({
+            "name": "x", "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "x", "version": "1.0.0"},
+                "node_modules/express": {"version": "4.18.2"},
+                "node_modules/express/node_modules/debug": {"version": "2.6.9"},
+            },
+        }))
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p for p in packages}
+        assert by_name["express"].version == "4.18.2"
+        assert by_name["debug"].version == "2.6.9"
+        assert all(p.ecosystem == "npm" for p in packages)
+
+    def test_parses_package_lock_json_v1(self, tmp_path):
+        (tmp_path / "package-lock.json").write_text(json.dumps({
+            "name": "x", "lockfileVersion": 1,
+            "dependencies": {
+                "express": {"version": "4.18.2", "dependencies": {
+                    "debug": {"version": "2.6.9"},
+                }},
+            },
+        }))
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p for p in packages}
+        assert by_name["express"].version == "4.18.2"
+        assert by_name["debug"].version == "2.6.9"
+
+    def test_parses_go_mod(self, tmp_path):
+        (tmp_path / "go.mod").write_text(
+            "module example.com/foo\n\ngo 1.22\n\n"
+            "require github.com/pkg/errors v0.9.1\n\n"
+            "require (\n"
+            "\tgithub.com/stretchr/testify v1.9.0\n"
+            "\tgolang.org/x/text v0.3.7 // indirect\n"
+            ")\n"
+        )
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p for p in packages}
+        assert by_name["github.com/pkg/errors"].version == "v0.9.1"
+        assert by_name["github.com/stretchr/testify"].version == "v1.9.0"
+        assert by_name["golang.org/x/text"].version == "v0.3.7"
+        assert all(p.ecosystem == "Go" for p in packages)
+
+    def test_parses_go_sum_dedupes_go_mod_hash_lines(self, tmp_path):
+        (tmp_path / "go.sum").write_text(
+            "github.com/pkg/errors v0.9.1 h1:xxxxx=\n"
+            "github.com/pkg/errors v0.9.1/go.mod h1:yyyyy=\n"
+        )
+        packages = parse_manifests(tmp_path)
+        assert len(packages) == 1
+        assert packages[0].name == "github.com/pkg/errors"
+        assert packages[0].version == "v0.9.1"
+        assert packages[0].ecosystem == "Go"
+
 
 class TestSBOMGeneration:
     def test_generates_valid_cyclonedx_1_5_schema(self):
