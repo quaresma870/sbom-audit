@@ -17,10 +17,10 @@ Early, actively developed. Currently covers:
 
 - **`generate`** — produces a real, schema-valid CycloneDX 1.5 JSON SBOM
   from a project's dependency manifests: Python (`requirements.txt`,
-  `pyproject.toml`), Node.js (`package.json`, `package-lock.json`), and
-  Go (`go.mod`, `go.sum`). Validated against the official CycloneDX
-  JSON schema (via `cyclonedx-python-lib`) in this repo's own test
-  suite, not just an internal shape assumption.
+  `pyproject.toml`, `poetry.lock`, `pdm.lock`), Node.js (`package.json`,
+  `package-lock.json`), and Go (`go.mod`, `go.sum`). Validated against
+  the official CycloneDX JSON schema (via `cyclonedx-python-lib`) in
+  this repo's own test suite, not just an internal shape assumption.
 - **`scan`** — checks a project's dependencies (across all supported
   ecosystems above) against [OSV.dev](https://osv.dev)'s free, open
   vulnerability database. Query pattern adapted directly from the

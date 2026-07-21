@@ -1,7 +1,8 @@
 """
-Dependency manifest parsing — requirements.txt/pyproject.toml (Python),
-package.json/package-lock.json (npm), and go.mod/go.sum (Go) into a
-normalized [(name, version, ecosystem), ...] list.
+Dependency manifest parsing — requirements.txt/pyproject.toml/
+poetry.lock/pdm.lock (Python), package.json/package-lock.json (npm),
+and go.mod/go.sum (Go) into a normalized
+[(name, version, ecosystem), ...] list.
 
 requirements.txt parsing regex adapted directly from the already-proven
 pattern in the sibling secureaudit repo's CVE plugin, not rewritten from
@@ -117,6 +118,24 @@ def _walk_lockfile_v1_deps(deps: dict) -> list[Package]:
     return packages
 
 
+def _parse_toml_lock(path: Path) -> list[Package]:
+    """Shared parser for poetry.lock and pdm.lock — both use the same
+    [[package]] array-of-tables TOML structure with name/version keys,
+    giving exact resolved versions rather than requirements.txt/
+    pyproject.toml's declared constraints."""
+    try:
+        data = tomllib.loads(path.read_text(errors="ignore"))
+    except tomllib.TOMLDecodeError:
+        return []
+
+    packages = []
+    for pkg in data.get("package", []):
+        name, version = pkg.get("name"), pkg.get("version")
+        if name and version:
+            packages.append(Package(name=name, version=version))
+    return packages
+
+
 def _parse_go_mod(path: Path) -> list[Package]:
     """Parses require directives — both the block form (`require (...)`)
     and single-line form (`require module version`). Unlike Python/npm
@@ -178,6 +197,14 @@ def parse_manifests(project_dir: str | Path) -> list[Package]:
     pyproject = project_dir / "pyproject.toml"
     if pyproject.exists():
         packages.extend(_parse_pyproject_toml(pyproject))
+
+    poetry_lock = project_dir / "poetry.lock"
+    if poetry_lock.exists():
+        packages.extend(_parse_toml_lock(poetry_lock))
+
+    pdm_lock = project_dir / "pdm.lock"
+    if pdm_lock.exists():
+        packages.extend(_parse_toml_lock(pdm_lock))
 
     package_json = project_dir / "package.json"
     if package_json.exists():
