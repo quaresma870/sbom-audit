@@ -88,6 +88,27 @@ jobs:
           "
           echo "::endgroup::"
 
+          echo "::group::generate — real SBOM from a mixed npm + Go project (no Python manifests)"
+          NODE_GO_DIR=$(mktemp -d)
+          cat > "$NODE_GO_DIR/package.json" << 'EOF'
+          {"dependencies": {"express": "^4.18.2"}}
+          EOF
+          cat > "$NODE_GO_DIR/go.mod" << 'EOF'
+          module example.com/ci-test
+          go 1.22
+          require github.com/pkg/errors v0.9.1
+          EOF
+          $SA generate "$NODE_GO_DIR" --output "$NODE_GO_DIR/sbom.json" --name "ci-test-polyglot"
+          cat "$NODE_GO_DIR/sbom.json"
+          python3 -c "
+          import json
+          sbom = json.load(open('$NODE_GO_DIR/sbom.json'))
+          names = {c['name'] for c in sbom['components']}
+          assert names == {'express', 'github.com/pkg/errors'}, names
+          print('OK: SBOM generated with npm + Go components')
+          "
+          echo "::endgroup::"
+
           echo "::group::scan — real network call to OSV.dev, scanning this repo's own real dependencies"
           # Uses this checked-out repo's own real requirements.txt,
           # which genuinely has real, currently-maintained dependencies
