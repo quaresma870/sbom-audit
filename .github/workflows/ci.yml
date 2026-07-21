@@ -126,4 +126,17 @@ jobs:
           "
           echo "::endgroup::"
 
+          echo "::group::cra-report — real CRA Annex I Part II mapping, including a real OSV.dev scan"
+          $SA cra-report "$GITHUB_WORKSPACE" --output /tmp/cra_report.json
+          cat /tmp/cra_report.json
+          python3 -c "
+          import json
+          report = json.load(open('/tmp/cra_report.json'))
+          points = {r['point'] for r in report['requirements']}
+          assert points == {str(n) for n in range(1, 9)}, points
+          assert report['requirements'][0]['status'] == 'SATISFIED'
+          print('OK: CRA mapping report generated with all 8 points')
+          "
+          echo "::endgroup::"
+
           echo "All integration checks passed."

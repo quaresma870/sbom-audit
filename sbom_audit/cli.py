@@ -82,6 +82,47 @@ def scan(project_dir, json_output):
         sys.exit(1)
 
 
+@cli.command(name="cra-report")
+@click.argument("project_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--output", "-o", default=None, type=click.Path())
+@click.option("--name", default=None, help="Project name for the report (default: directory name).")
+def cra_report(project_dir, output, name):
+    """Map SBOM + OSV.dev scan results to the EU Cyber Resilience Act's
+    Annex I Part II vulnerability-handling requirements. Informational
+    only — not legal advice or a compliance certification."""
+    from sbom_audit.core.cra_mapping import map_findings_to_cra
+    from sbom_audit.core.manifest_parser import parse_manifests
+    from sbom_audit.core.sbom_generator import generate_sbom
+    from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
+    from sbom_audit.reports.cra_report import build_cra_report_dict, print_cra_report
+
+    project_dir = Path(project_dir)
+    project_name = name or project_dir.resolve().name
+
+    packages = parse_manifests(project_dir)
+    sbom = generate_sbom(project_name, packages)
+
+    findings = []
+    scanned = False
+    if packages:
+        console.print(f"Checking {len(packages)} dependencies against OSV.dev...")
+        try:
+            findings = check_vulnerabilities(packages)
+            scanned = True
+        except OSVQueryError as exc:
+            console.print(f"[yellow]⚠[/yellow] Could not complete OSV.dev scan: {exc}")
+
+    requirements = map_findings_to_cra(len(sbom["components"]), findings, scanned)
+    print_cra_report(project_name, requirements)
+
+    if output:
+        import json
+
+        report = build_cra_report_dict(project_name, requirements)
+        Path(output).write_text(json.dumps(report, indent=2))
+        console.print(f"[green]✔[/green] Wrote CRA mapping report to [bold]{output}[/bold]")
+
+
 def main():
     cli()
 

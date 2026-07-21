@@ -20,6 +20,18 @@ go.sum exact resolved versions). `parse_manifests` checks for all of
 these alongside requirements.txt/pyproject.toml and unions whatever it
 finds, so a polyglot repo gets a single combined SBOM/scan.
 
+### CRA compliance report mapping
+`cra-report` maps SBOM + `scan` results to the vulnerability-handling
+requirements in Annex I Part II of the EU Cyber Resilience Act
+(Regulation (EU) 2024/2847). Scoped deliberately: points 1-3 (SBOM,
+remediation, testing) are things a manifest scan can actually observe
+and are marked SATISFIED/ATTENTION_NEEDED; points 4-8 (disclosure
+policy, security contact, update distribution, patch dissemination)
+are organizational/process requirements no static tool can verify, and
+are always reported NOT_AUTOMATABLE rather than guessed at. Output
+carries an explicit disclaimer — informational only, not legal advice
+or a compliance certification.
+
 ## Next
 
 ### sigstore/cosign provenance verification
@@ -28,12 +40,6 @@ not just checking for known CVEs — a real, separate concern from
 vulnerability scanning. This was part of the original idea for this
 tool and deliberately deferred out of v0.1 to keep the first release
 focused and shippable.
-
-### CRA compliance report mapping
-A report format that explicitly maps findings to specific EU Cyber
-Resilience Act requirements, rather than a generic vulnerability list —
-useful for anyone using this tool specifically for compliance
-documentation, not just security review.
 
 ### Lock file support
 requirements.txt/pyproject.toml give declared version *constraints*,
