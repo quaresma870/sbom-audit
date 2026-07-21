@@ -25,7 +25,10 @@ def cli():
 @click.argument("project_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--output", "-o", default="sbom.json", show_default=True)
 @click.option("--name", default=None, help="Project name for the SBOM metadata (default: directory name).")
-def generate(project_dir, output, name):
+@click.option("--licenses", "include_licenses", is_flag=True, default=False,
+              help="Look up each dependency's license from its registry (one network "
+                   "call per dependency; generate stays offline without this flag).")
+def generate(project_dir, output, name, include_licenses):
     """Generate a CycloneDX 1.5 JSON SBOM from a project's dependency manifests."""
     import json
 
@@ -42,7 +45,14 @@ def generate(project_dir, output, name):
             f"under {project_dir}."
         )
 
-    sbom = generate_sbom(project_name, packages)
+    license_results = None
+    if include_licenses and packages:
+        from sbom_audit.core.license_lookup import check_licenses
+
+        console.print(f"Looking up licenses for {len(packages)} dependencies...")
+        license_results = check_licenses(packages)
+
+    sbom = generate_sbom(project_name, packages, license_results=license_results)
     Path(output).write_text(json.dumps(sbom, indent=2))
     console.print(f"[green]✔[/green] Generated SBOM with {len(packages)} component(s): [bold]{output}[/bold]")
 

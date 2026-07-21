@@ -5,6 +5,7 @@ import json
 import pytest
 
 from sbom_audit.core.cra_mapping import CRAStatus, map_findings_to_cra
+from sbom_audit.core.license_lookup import LicenseResult, check_licenses
 from sbom_audit.core.manifest_parser import Package, parse_manifests
 from sbom_audit.core.models import Finding, Severity
 from sbom_audit.core.provenance_check import ProvenanceStatus, check_provenance
@@ -211,6 +212,41 @@ class TestSBOMGeneration:
         root_deps = sbom["dependencies"][0]
         assert root_deps["ref"] == "root-component"
         assert len(root_deps["dependsOn"]) == 2
+
+    def test_license_spdx_id_produces_valid_schema(self):
+        from cyclonedx.schema import SchemaVersion
+        from cyclonedx.validation.json import JsonStrictValidator
+
+        pkg = Package(name="click", version="8.1.0")
+        license_results = [LicenseResult(pkg, spdx_id="BSD-3-Clause", name=None)]
+        sbom = generate_sbom("x", [pkg], license_results=license_results)
+
+        assert sbom["components"][0]["licenses"] == [{"license": {"id": "BSD-3-Clause"}}]
+        validator = JsonStrictValidator(SchemaVersion.V1_5)
+        errors = validator.validate_str(json.dumps(sbom))
+        assert not errors, f"Schema validation failed: {errors}"
+
+    def test_license_free_text_name_produces_valid_schema(self):
+        from cyclonedx.schema import SchemaVersion
+        from cyclonedx.validation.json import JsonStrictValidator
+
+        pkg = Package(name="cryptography", version="42.0.5")
+        license_results = [LicenseResult(pkg, spdx_id=None, name="Apache-2.0 OR BSD-3-Clause")]
+        sbom = generate_sbom("x", [pkg], license_results=license_results)
+
+        assert sbom["components"][0]["licenses"] == [{"license": {"name": "Apache-2.0 OR BSD-3-Clause"}}]
+        validator = JsonStrictValidator(SchemaVersion.V1_5)
+        errors = validator.validate_str(json.dumps(sbom))
+        assert not errors, f"Schema validation failed: {errors}"
+
+    def test_no_license_result_omits_licenses_field(self):
+        pkg = Package(name="click", version="8.1.0")
+        sbom = generate_sbom("x", [pkg], license_results=[LicenseResult(pkg, None, None)])
+        assert "licenses" not in sbom["components"][0]
+
+    def test_no_license_results_passed_omits_licenses_field(self):
+        sbom = generate_sbom("x", [Package(name="click", version="8.1.0")])
+        assert "licenses" not in sbom["components"][0]
 
 
 class TestVulnerabilityCheck:
@@ -456,3 +492,92 @@ class TestSarifReport:
         sarif = build_sarif([self._finding(Severity.CRITICAL)])
         assert sarif["version"] == "2.1.0"
         assert sarif["runs"][0]["tool"]["driver"]["name"] == "sbom-audit"
+
+
+class TestLicenseLookup:
+    """Registry queries are mocked at the HTTP transport layer only,
+    same pattern as OSV.dev/provenance-check."""
+
+    class _FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+        def read(self):
+            return json.dumps(self._payload).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def test_pypi_known_spdx_id_in_license_field(self):
+        results = check_licenses(
+            [Package(name="click", version="8.1.7", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({"info": {"license": "BSD-3-Clause"}}),
+        )
+        assert results[0].spdx_id == "BSD-3-Clause"
+        assert results[0].name is None
+
+    def test_pypi_non_spdx_license_field_becomes_free_text_name(self):
+        results = check_licenses(
+            [Package(name="requests", version="2.31.0", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({"info": {"license": "Apache 2.0"}}),
+        )
+        assert results[0].spdx_id is None
+        assert results[0].name == "Apache 2.0"
+
+    def test_pypi_oversized_license_text_falls_back_to_classifier(self):
+        huge_text = "x" * 500
+        results = check_licenses(
+            [Package(name="numpy", version="1.26.4", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({
+                "info": {
+                    "license": huge_text,
+                    "classifiers": ["License :: OSI Approved :: BSD License"],
+                }
+            }),
+        )
+        assert results[0].spdx_id is None
+        assert results[0].name == "BSD License"
+
+    def test_pypi_no_license_data_returns_none(self):
+        results = check_licenses(
+            [Package(name="x", version="1.0", ecosystem="PyPI")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({"info": {}}),
+        )
+        assert results[0].spdx_id is None
+        assert results[0].name is None
+
+    def test_pypi_network_error_returns_none_without_crashing(self):
+        import urllib.error
+
+        def fake_urlopen(req, timeout):
+            raise urllib.error.URLError("simulated network failure")
+
+        results = check_licenses(
+            [Package(name="x", version="1.0", ecosystem="PyPI")], urlopen_fn=fake_urlopen,
+        )
+        assert results[0].spdx_id is None
+        assert results[0].name is None
+
+    def test_npm_string_license_field(self):
+        results = check_licenses(
+            [Package(name="express", version="4.18.2", ecosystem="npm")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({"license": "MIT"}),
+        )
+        assert results[0].spdx_id == "MIT"
+
+    def test_npm_legacy_object_license_field(self):
+        results = check_licenses(
+            [Package(name="old-pkg", version="1.0.0", ecosystem="npm")],
+            urlopen_fn=lambda req, timeout: self._FakeResponse({"license": {"type": "MIT", "url": "https://x"}}),
+        )
+        assert results[0].spdx_id == "MIT"
+
+    def test_go_ecosystem_skips_network_call(self):
+        def fake_urlopen(req, timeout):
+            raise AssertionError("should not be called for an unsupported ecosystem")
+
+        results = check_licenses(
+            [Package(name="github.com/pkg/errors", version="v0.9.1", ecosystem="Go")], urlopen_fn=fake_urlopen,
+        )
+        assert results[0].spdx_id is None
+        assert results[0].name is None

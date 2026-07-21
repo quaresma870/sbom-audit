@@ -70,13 +70,24 @@ a specific line, the same convention other SCA tools use for
 dependency-level findings. INFO-level "scan came back clean" results
 are excluded from SARIF output since they aren't actionable alerts.
 
-## Next
-
 ### License field in the SBOM
-CycloneDX supports a `licenses` array per component that `generate`
-doesn't populate at all today. Useful in its own right and for
-compliance workflows that need to know not just what's a dependency
-but what it's licensed under.
+`generate --licenses` populates each component's CycloneDX `licenses`
+array. None of the local manifest/lockfile formats this tool parses
+carry license metadata, so it comes from one registry call per
+dependency (PyPI's legacy `/pypi/{name}/{version}/json`, npm's lean
+per-version `/{name}/{version}` endpoint) — a real trade-off, so it's
+opt-in rather than changing `generate`'s default fast/offline
+behavior. CycloneDX validates `license.id` against the official SPDX
+list, so `id` is only emitted for an exact match against a curated set
+of common, unambiguous SPDX identifiers; everything else (a full
+license-text dump — confirmed real, `numpy`'s `info.license` is over
+46KB — a compound expression like "Apache-2.0 OR BSD-3-Clause", a
+generic classifier label like "BSD License" that doesn't specify which
+BSD variant) goes into the free-text `name` field instead of being
+guessed at. Go has no equivalent central license registry and is
+skipped without a network call.
+
+## Next
 
 ### More ecosystems: Rust and Ruby
 `Cargo.lock` (Rust) and `Gemfile.lock` (Ruby) are the next most common
