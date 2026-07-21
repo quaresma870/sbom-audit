@@ -18,13 +18,14 @@ Early, actively developed. Currently covers:
 - **`generate`** — produces a real, schema-valid CycloneDX 1.5 JSON SBOM
   from a project's dependency manifests: Python (`requirements.txt`,
   `pyproject.toml`, `poetry.lock`, `pdm.lock`), Node.js (`package.json`,
-  `package-lock.json`), and Go (`go.mod`, `go.sum`). Validated against
-  the official CycloneDX JSON schema (via `cyclonedx-python-lib`) in
-  this repo's own test suite, not just an internal shape assumption.
-  `--licenses` optionally looks up each dependency's license from its
-  registry (PyPI, npm) and populates the CycloneDX `licenses` field —
-  one network call per dependency, so it's opt-in; `generate` stays
-  fast and offline without the flag.
+  `package-lock.json`), Go (`go.mod`, `go.sum`), Rust (`Cargo.lock`),
+  and Ruby (`Gemfile.lock`). Validated against the official CycloneDX
+  JSON schema (via `cyclonedx-python-lib`) in this repo's own test
+  suite, not just an internal shape assumption. `--licenses` optionally
+  looks up each dependency's license from its registry (PyPI, npm) and
+  populates the CycloneDX `licenses` field — one network call per
+  dependency, so it's opt-in; `generate` stays fast and offline without
+  the flag (Go/Rust/Ruby aren't covered by `--licenses` yet).
 - **`scan`** — checks a project's dependencies (across all supported
   ecosystems above) against [OSV.dev](https://osv.dev)'s free, open
   vulnerability database. Query pattern adapted directly from the
@@ -79,7 +80,7 @@ sbom-audit/
 ├── sbom_audit/
 │   ├── cli.py                  # generate, scan, cra-report, provenance-check
 │   ├── core/
-│   │   ├── manifest_parser.py  # Python/npm/Go manifests -> normalized packages
+│   │   ├── manifest_parser.py  # Python/npm/Go/Rust/Ruby manifests -> normalized packages
 │   │   ├── sbom_generator.py   # real CycloneDX 1.5 JSON generation
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
 │   │   ├── cra_mapping.py      # SBOM/scan results -> CRA Annex I Part II mapping

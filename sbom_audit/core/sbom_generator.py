@@ -80,7 +80,7 @@ def _licenses_field(lr: LicenseResult | None) -> dict:
 
 
 def _purl(pkg: Package) -> str:
-    ecosystem_map = {"PyPI": "pypi", "npm": "npm", "Go": "golang"}
+    ecosystem_map = {"PyPI": "pypi", "npm": "npm", "Go": "golang", "crates.io": "cargo", "RubyGems": "gem"}
     purl_type = ecosystem_map.get(pkg.ecosystem, pkg.ecosystem.lower())
     # PyPI package names are normalized to lowercase with hyphens for
     # purl per the package-url PyPI-specific rules — a real, documented

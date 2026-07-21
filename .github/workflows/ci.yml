@@ -109,6 +109,45 @@ jobs:
           "
           echo "::endgroup::"
 
+          echo "::group::generate — real SBOM from Rust Cargo.lock + Ruby Gemfile.lock"
+          RUST_RUBY_DIR=$(mktemp -d)
+          cat > "$RUST_RUBY_DIR/Cargo.lock" << 'EOF'
+          version = 3
+
+          [[package]]
+          name = "serde"
+          version = "1.0.197"
+          source = "registry+https://github.com/rust-lang/crates.io-index"
+          EOF
+          cat > "$RUST_RUBY_DIR/Gemfile.lock" << 'EOF'
+          GEM
+            remote: https://rubygems.org/
+            specs:
+              rails (7.0.4)
+                actionpack (= 7.0.4)
+              actionpack (7.0.4)
+
+          PLATFORMS
+            ruby
+
+          DEPENDENCIES
+            rails
+          EOF
+          $SA generate "$RUST_RUBY_DIR" --output "$RUST_RUBY_DIR/sbom.json" --name "ci-test-rust-ruby"
+          cat "$RUST_RUBY_DIR/sbom.json"
+          python3 -c "
+          import json
+          sbom = json.load(open('$RUST_RUBY_DIR/sbom.json'))
+          by_name = {c['name']: c['purl'] for c in sbom['components']}
+          assert by_name == {
+              'serde': 'pkg:cargo/serde@1.0.197',
+              'rails': 'pkg:gem/rails@7.0.4',
+              'actionpack': 'pkg:gem/actionpack@7.0.4',
+          }, by_name
+          print('OK: SBOM generated with Rust + Ruby components')
+          "
+          echo "::endgroup::"
+
           echo "::group::generate --licenses — real license lookups against real npm + PyPI"
           LICENSE_DIR=$(mktemp -d)
           cat > "$LICENSE_DIR/requirements.txt" << 'EOF'

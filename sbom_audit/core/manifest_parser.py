@@ -119,11 +119,11 @@ def _walk_lockfile_v1_deps(deps: dict, source_file: str) -> list[Package]:
     return packages
 
 
-def _parse_toml_lock(path: Path) -> list[Package]:
-    """Shared parser for poetry.lock and pdm.lock — both use the same
-    [[package]] array-of-tables TOML structure with name/version keys,
-    giving exact resolved versions rather than requirements.txt/
-    pyproject.toml's declared constraints."""
+def _parse_toml_lock(path: Path, ecosystem: str = "PyPI") -> list[Package]:
+    """Shared parser for poetry.lock, pdm.lock, and Cargo.lock — all
+    three use the same [[package]] array-of-tables TOML structure with
+    name/version keys, giving exact resolved versions rather than a
+    manifest's declared constraints."""
     try:
         data = tomllib.loads(path.read_text(errors="ignore"))
     except tomllib.TOMLDecodeError:
@@ -133,7 +133,7 @@ def _parse_toml_lock(path: Path) -> list[Package]:
     for pkg in data.get("package", []):
         name, version = pkg.get("name"), pkg.get("version")
         if name and version:
-            packages.append(Package(name=name, version=version, source_file=path.name))
+            packages.append(Package(name=name, version=version, ecosystem=ecosystem, source_file=path.name))
     return packages
 
 
@@ -182,6 +182,32 @@ def _parse_go_sum(path: Path) -> list[Package]:
     return packages
 
 
+def _parse_gemfile_lock(path: Path) -> list[Package]:
+    """Parses the GEM/PATH/GIT `specs:` sections of Gemfile.lock.
+    Resolved gems are 4-space-indented "name (version)" lines; their
+    own declared dependencies are listed directly beneath them at
+    6-space indent and are skipped, since those same gems already
+    appear as their own top-level 4-space-indented spec entries
+    elsewhere in the file, with their own exact resolved version."""
+    packages = []
+    in_specs = False
+    for line in path.read_text(errors="ignore").splitlines():
+        if line.strip() == "specs:":
+            in_specs = True
+            continue
+        if not in_specs:
+            continue
+        if line and not line.startswith(" "):
+            in_specs = False
+            continue
+        if not line.startswith("    ") or line.startswith("      "):
+            continue
+        m = re.match(r"^\s*([A-Za-z0-9_.\-]+)\s+\(([^)]+)\)", line)
+        if m:
+            packages.append(Package(name=m.group(1), version=m.group(2), ecosystem="RubyGems", source_file=path.name))
+    return packages
+
+
 def parse_manifests(project_dir: str | Path) -> list[Package]:
     """Parses every supported manifest file found directly in
     project_dir, returning the union of packages found (a project
@@ -222,5 +248,13 @@ def parse_manifests(project_dir: str | Path) -> list[Package]:
     go_sum = project_dir / "go.sum"
     if go_sum.exists():
         packages.extend(_parse_go_sum(go_sum))
+
+    cargo_lock = project_dir / "Cargo.lock"
+    if cargo_lock.exists():
+        packages.extend(_parse_toml_lock(cargo_lock, ecosystem="crates.io"))
+
+    gemfile_lock = project_dir / "Gemfile.lock"
+    if gemfile_lock.exists():
+        packages.extend(_parse_gemfile_lock(gemfile_lock))
 
     return packages
