@@ -25,7 +25,9 @@ Early, actively developed. Currently covers:
   ecosystems above) against [OSV.dev](https://osv.dev)'s free, open
   vulnerability database. Query pattern adapted directly from the
   sibling [secureaudit](https://github.com/quaresma870/secureaudit)
-  repo's already-proven CVE plugin.
+  repo's already-proven CVE plugin. Supports `--sarif` output (SARIF
+  2.1.0) for GitHub code-scanning upload, alongside the existing
+  terminal table and `--json`.
 - **`cra-report`** — maps SBOM + `scan` results to the vulnerability-
   handling requirements in Annex I Part II of the EU Cyber Resilience
   Act (Regulation (EU) 2024/2847). Only reports SATISFIED/
@@ -60,6 +62,7 @@ pip install .
 sbom-audit generate /path/to/your/project --output sbom.json
 sbom-audit scan /path/to/your/project
 sbom-audit scan /path/to/your/project --json findings.json
+sbom-audit scan /path/to/your/project --sarif results.sarif
 sbom-audit cra-report /path/to/your/project --output cra.json
 sbom-audit provenance-check /path/to/your/project --json provenance.json
 ```
@@ -79,6 +82,7 @@ sbom-audit/
 │   │   └── models.py
 │   └── reports/
 │       ├── terminal.py           # scan findings table
+│       ├── sarif_report.py       # scan findings -> SARIF 2.1.0
 │       ├── cra_report.py         # CRA mapping table + JSON
 │       └── provenance_report.py  # provenance table + JSON
 ├── tests/test_sbom_audit.py    # includes real CycloneDX schema validation

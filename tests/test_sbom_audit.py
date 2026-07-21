@@ -10,6 +10,7 @@ from sbom_audit.core.models import Finding, Severity
 from sbom_audit.core.provenance_check import ProvenanceStatus, check_provenance
 from sbom_audit.core.sbom_generator import generate_sbom
 from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
+from sbom_audit.reports.sarif_report import build_sarif
 
 
 class TestManifestParsing:
@@ -20,6 +21,13 @@ class TestManifestParsing:
         packages = parse_manifests(tmp_path)
         names = {p.name for p in packages}
         assert names == {"click", "rich", "pyyaml"}
+
+    def test_parsed_packages_track_source_file(self, tmp_path):
+        (tmp_path / "requirements.txt").write_text("click>=8.1.0\n")
+        (tmp_path / "package.json").write_text('{"dependencies": {"express": "^4.18.2"}}')
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p.source_file for p in packages}
+        assert by_name == {"click": "requirements.txt", "express": "package.json"}
 
     def test_parses_pyproject_toml(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text(
@@ -408,3 +416,43 @@ class TestProvenanceCheck:
     def test_go_ecosystem_is_unsupported(self):
         results = check_provenance([Package(name="github.com/pkg/errors", version="v0.9.1", ecosystem="Go")])
         assert results[0].status == ProvenanceStatus.UNSUPPORTED_ECOSYSTEM
+
+
+class TestSarifReport:
+    def _finding(self, severity, vuln_id="GHSA-xxxx-yyyy-zzzz", source_file="requirements.txt"):
+        return Finding(
+            module="osv_check", title=f"{vuln_id} in pkg 1.0", severity=severity, target="pkg==1.0",
+            description="A test vulnerability", reference="https://osv.dev/GHSA-xxxx-yyyy-zzzz",
+            extra={"vuln_id": vuln_id, "ecosystem": "PyPI", "package": "pkg", "version": "1.0",
+                   "source_file": source_file},
+        )
+
+    def test_info_findings_excluded_from_results(self):
+        info_finding = Finding(module="osv_check", title="clean", severity=Severity.INFO, target="1 package(s)")
+        sarif = build_sarif([info_finding])
+        assert sarif["runs"][0]["results"] == []
+
+    def test_critical_and_high_map_to_error(self):
+        sarif = build_sarif([self._finding(Severity.CRITICAL), self._finding(Severity.HIGH)])
+        levels = {r["level"] for r in sarif["runs"][0]["results"]}
+        assert levels == {"error"}
+
+    def test_medium_maps_to_warning_and_low_to_note(self):
+        sarif = build_sarif([self._finding(Severity.MEDIUM), self._finding(Severity.LOW)])
+        levels = [r["level"] for r in sarif["runs"][0]["results"]]
+        assert levels == ["warning", "note"]
+
+    def test_location_uses_source_file(self):
+        sarif = build_sarif([self._finding(Severity.HIGH, source_file="poetry.lock")])
+        location = sarif["runs"][0]["results"][0]["locations"][0]
+        assert location["physicalLocation"]["artifactLocation"]["uri"] == "poetry.lock"
+
+    def test_duplicate_vuln_id_produces_one_rule(self):
+        sarif = build_sarif([self._finding(Severity.HIGH), self._finding(Severity.HIGH)])
+        assert len(sarif["runs"][0]["tool"]["driver"]["rules"]) == 1
+        assert len(sarif["runs"][0]["results"]) == 2
+
+    def test_output_is_valid_sarif_2_1_0_shape(self):
+        sarif = build_sarif([self._finding(Severity.CRITICAL)])
+        assert sarif["version"] == "2.1.0"
+        assert sarif["runs"][0]["tool"]["driver"]["name"] == "sbom-audit"

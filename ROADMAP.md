@@ -59,11 +59,35 @@ as a dependency). Go modules have no standard Sigstore-based
 provenance mechanism yet and are reported as `UNSUPPORTED_ECOSYSTEM`
 rather than guessed at.
 
+### SARIF output for `scan`
+`scan --sarif results.sarif` writes SARIF 2.1.0, for GitHub's
+code-scanning upload — findings show up as inline PR annotations in
+the Security tab instead of a JSON file nobody opens. Each result's
+location points at the manifest/lockfile the dependency was declared
+in (a small addition to `Package` — `source_file`, populated from
+files already being read, not a new data-collection step) rather than
+a specific line, the same convention other SCA tools use for
+dependency-level findings. INFO-level "scan came back clean" results
+are excluded from SARIF output since they aren't actionable alerts.
+
 ## Next
 
-Nothing currently queued — all planned items have shipped. Next
-candidates would build on `provenance-check`: full client-side
-Rekor/Fulcio bundle re-verification (via sigstore-python) for packages
-that already report ATTESTED, if independent re-verification (rather
-than trusting the registry's own check) turns out to matter in
-practice.
+### License field in the SBOM
+CycloneDX supports a `licenses` array per component that `generate`
+doesn't populate at all today. Useful in its own right and for
+compliance workflows that need to know not just what's a dependency
+but what it's licensed under.
+
+### More ecosystems: Rust and Ruby
+`Cargo.lock` (Rust) and `Gemfile.lock` (Ruby) are the next most common
+gaps — same shape of work as the existing npm/Go parsers, porting a
+proven pattern rather than a new design.
+
+### Independent sigstore/cosign re-verification
+`provenance-check` currently trusts that npm/PyPI already validated a
+package's attestation against Sigstore at publish time. A deeper pass
+would add real client-side Rekor/Fulcio re-verification (via
+sigstore-python) for packages that report ATTESTED, closing the gap
+between "the registry says this is verified" and "this tool
+independently confirmed it" — at the cost of a much heavier dependency
+and downloading each artifact.

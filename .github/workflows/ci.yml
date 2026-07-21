@@ -116,13 +116,22 @@ jobs:
           # completes successfully end-to-end (request built correctly,
           # response parsed correctly), not necessarily that any
           # specific vulnerability is found.
-          $SA scan "$GITHUB_WORKSPACE" --json /tmp/scan_results.json || true
+          $SA scan "$GITHUB_WORKSPACE" --json /tmp/scan_results.json --sarif /tmp/scan_results.sarif || true
           cat /tmp/scan_results.json
+          cat /tmp/scan_results.sarif
           python3 -c "
           import json
           findings = json.load(open('/tmp/scan_results.json'))
           assert len(findings) >= 1, 'expected at least one finding (even a clean INFO result)'
           print(f'OK: OSV.dev query completed, {len(findings)} finding(s)')
+
+          sarif = json.load(open('/tmp/scan_results.sarif'))
+          assert sarif['version'] == '2.1.0'
+          assert sarif['runs'][0]['tool']['driver']['name'] == 'sbom-audit'
+          # The clean-scan INFO finding is excluded from SARIF results
+          # (not an actionable alert), so results can legitimately be
+          # empty even though the JSON findings list is not.
+          print(f\"OK: SARIF report generated with {len(sarif['runs'][0]['results'])} result(s)\")
           "
           echo "::endgroup::"
 

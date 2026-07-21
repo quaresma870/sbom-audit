@@ -94,5 +94,8 @@ def _finding_from_vuln(pkg: Package, vuln: dict) -> Finding:
         evidence=f"{pkg.ecosystem}: {pkg.name}=={pkg.version}",
         remediation=f"Update {pkg.name} to a patched version. Check {ref_url}",
         reference=ref_url,
-        extra={"vuln_id": vuln_id, "ecosystem": pkg.ecosystem, "package": pkg.name, "version": pkg.version},
+        extra={
+            "vuln_id": vuln_id, "ecosystem": pkg.ecosystem, "package": pkg.name,
+            "version": pkg.version, "source_file": pkg.source_file,
+        },
     )

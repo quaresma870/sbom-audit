@@ -50,7 +50,9 @@ def generate(project_dir, output, name):
 @cli.command()
 @click.argument("project_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--json", "json_output", default=None, type=click.Path())
-def scan(project_dir, json_output):
+@click.option("--sarif", "sarif_output", default=None, type=click.Path(),
+              help="Write results as SARIF 2.1.0, for GitHub code scanning upload.")
+def scan(project_dir, json_output, sarif_output):
     """Check a project's dependencies against OSV.dev for known vulnerabilities."""
     from sbom_audit.core.manifest_parser import parse_manifests
     from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
@@ -77,6 +79,15 @@ def scan(project_dir, json_output):
         with open(json_output, "w") as f:
             json_module.dump([f.to_dict() for f in findings], f, indent=2)
         console.print(f"[green]✔[/green] Wrote {len(findings)} finding(s) to {json_output}")
+
+    if sarif_output:
+        import json as json_module
+
+        from sbom_audit.reports.sarif_report import build_sarif
+
+        with open(sarif_output, "w") as f:
+            json_module.dump(build_sarif(findings), f, indent=2)
+        console.print(f"[green]✔[/green] Wrote SARIF report to {sarif_output}")
 
     if any(f.severity.value in ("CRITICAL", "HIGH") for f in findings):
         sys.exit(1)
