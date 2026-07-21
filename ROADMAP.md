@@ -87,12 +87,22 @@ BSD variant) goes into the free-text `name` field instead of being
 guessed at. Go has no equivalent central license registry and is
 skipped without a network call.
 
-## Next
-
 ### More ecosystems: Rust and Ruby
-`Cargo.lock` (Rust) and `Gemfile.lock` (Ruby) are the next most common
-gaps — same shape of work as the existing npm/Go parsers, porting a
-proven pattern rather than a new design.
+`generate`/`scan` now also parse Rust's `Cargo.lock` (same `[[package]]`
+TOML array-of-tables structure as poetry.lock/pdm.lock, so
+`_parse_toml_lock` gained an `ecosystem` parameter and covers all
+three) and Ruby's `Gemfile.lock` (a custom format: 4-space-indented
+`name (version)` lines under each `GIT`/`GEM` section's `specs:` block
+are the resolved gems; their own 6-space-indented declared dependencies
+are skipped, since those same gems already appear as their own
+top-level spec entries elsewhere in the file). Ecosystem strings match
+OSV.dev's naming (`crates.io`, `RubyGems`); purls use `cargo`/`gem` per
+the package-url spec. License lookup (`--licenses`) doesn't cover
+these two yet — no equivalent lean per-version registry endpoint was
+established for either, so they're skipped without a network call,
+same as Go.
+
+## Next
 
 ### Independent sigstore/cosign re-verification
 `provenance-check` currently trusts that npm/PyPI already validated a
