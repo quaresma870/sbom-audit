@@ -123,6 +123,37 @@ def cra_report(project_dir, output, name):
         console.print(f"[green]✔[/green] Wrote CRA mapping report to [bold]{output}[/bold]")
 
 
+@cli.command(name="provenance-check")
+@click.argument("project_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--json", "json_output", default=None, type=click.Path())
+def provenance_check(project_dir, json_output):
+    """Check whether npm/PyPI dependencies have a Sigstore-backed
+    provenance attestation on file with the registry. Checks registry
+    metadata, not a from-scratch client-side Rekor/Fulcio re-verification
+    of the raw attestation bundle."""
+    from sbom_audit.core.manifest_parser import parse_manifests
+    from sbom_audit.core.provenance_check import check_provenance
+    from sbom_audit.reports.provenance_report import print_provenance_report
+
+    project_dir = Path(project_dir)
+    packages = parse_manifests(project_dir)
+
+    if not packages:
+        console.print(f"[yellow]⚠[/yellow] No dependencies found under {project_dir}.")
+        sys.exit(0)
+
+    console.print(f"Checking provenance for {len(packages)} dependencies...")
+    results = check_provenance(packages)
+    print_provenance_report(str(project_dir), results)
+
+    if json_output:
+        import json
+
+        with open(json_output, "w") as f:
+            json.dump([r.to_dict() for r in results], f, indent=2)
+        console.print(f"[green]✔[/green] Wrote {len(results)} result(s) to {json_output}")
+
+
 def main():
     cli()
 

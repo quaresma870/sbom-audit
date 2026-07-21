@@ -42,11 +42,28 @@ really installed). `pip freeze` output was already covered by the
 existing requirements.txt parser, since its pinned `==` lines match
 the same regex.
 
+### sigstore/cosign provenance verification
+`provenance-check` reports whether npm/PyPI dependencies have a
+Sigstore-backed provenance attestation on file with the registry —
+npm's `/-/npm/v1/attestations/{name}@{version}` endpoint, and PyPI's
+Simple Repository API (PEP 691 JSON), which is the only PyPI API
+surface that actually carries the PEP 740 `provenance` field (the
+legacy `/pypi/{name}/{version}/json` metadata endpoint doesn't have
+it at all — confirmed against a real attested package, `pip`
+26.1.2, before settling on the Simple API). Scoped deliberately: this
+checks that the registry itself already validated the attestation
+against Sigstore at publish time, not a from-scratch client-side
+Rekor/Fulcio re-verification of the raw bundle (that would mean
+downloading every artifact and adding the full sigstore-python stack
+as a dependency). Go modules have no standard Sigstore-based
+provenance mechanism yet and are reported as `UNSUPPORTED_ECOSYSTEM`
+rather than guessed at.
+
 ## Next
 
-### sigstore/cosign provenance verification
-Verifying that a package's supply-chain provenance is signed/attested,
-not just checking for known CVEs — a real, separate concern from
-vulnerability scanning. This was part of the original idea for this
-tool and deliberately deferred out of v0.1 to keep the first release
-focused and shippable.
+Nothing currently queued — all planned items have shipped. Next
+candidates would build on `provenance-check`: full client-side
+Rekor/Fulcio bundle re-verification (via sigstore-python) for packages
+that already report ATTESTED, if independent re-verification (rather
+than trusting the registry's own check) turns out to matter in
+practice.

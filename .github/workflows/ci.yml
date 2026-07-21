@@ -139,4 +139,31 @@ jobs:
           "
           echo "::endgroup::"
 
+          echo "::group::provenance-check — real registry queries against real npm + PyPI"
+          PROV_DIR=$(mktemp -d)
+          cat > "$PROV_DIR/requirements.txt" << 'EOF'
+          pip==26.1.2
+          click==8.1.7
+          EOF
+          cat > "$PROV_DIR/package.json" << 'EOF'
+          {"dependencies": {"sigstore": "5.0.0", "express": "4.18.2"}}
+          EOF
+          $SA provenance-check "$PROV_DIR" --json /tmp/provenance.json
+          cat /tmp/provenance.json
+          python3 -c "
+          import json
+          results = json.load(open('/tmp/provenance.json'))
+          by_pkg = {r['package']: r['status'] for r in results}
+          # pip 26.1.2 and sigstore 5.0.0 are real, currently-attested
+          # releases (confirmed manually against the live registries
+          # before writing this check) -- click and express are real,
+          # currently-unattested releases, so both outcomes are covered.
+          assert by_pkg['pip'] == 'ATTESTED', by_pkg
+          assert by_pkg['sigstore'] == 'ATTESTED', by_pkg
+          assert by_pkg['click'] == 'NOT_ATTESTED', by_pkg
+          assert by_pkg['express'] == 'NOT_ATTESTED', by_pkg
+          print('OK: provenance-check completed against real npm + PyPI registries')
+          "
+          echo "::endgroup::"
+
           echo "All integration checks passed."
