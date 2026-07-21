@@ -109,6 +109,33 @@ jobs:
           "
           echo "::endgroup::"
 
+          echo "::group::generate --licenses — real license lookups against real npm + PyPI"
+          LICENSE_DIR=$(mktemp -d)
+          cat > "$LICENSE_DIR/requirements.txt" << 'EOF'
+          click==8.1.7
+          requests==2.31.0
+          EOF
+          cat > "$LICENSE_DIR/package.json" << 'EOF'
+          {"dependencies": {"express": "4.18.2"}}
+          EOF
+          $SA generate "$LICENSE_DIR" --output "$LICENSE_DIR/sbom.json" --name "ci-test-licenses" --licenses
+          cat "$LICENSE_DIR/sbom.json"
+          python3 -c "
+          import json
+          sbom = json.load(open('$LICENSE_DIR/sbom.json'))
+          by_name = {c['name']: c.get('licenses') for c in sbom['components']}
+          # click 8.1.7 and express 4.18.2 report a clean SPDX id
+          # (confirmed manually against the live registries before
+          # writing this check); requests 2.31.0's raw PyPI license
+          # field ('Apache 2.0') isn't an exact SPDX id, so it's
+          # expected as free-text -- both outcomes are covered.
+          assert by_name['click'] == [{'license': {'id': 'BSD-3-Clause'}}], by_name
+          assert by_name['express'] == [{'license': {'id': 'MIT'}}], by_name
+          assert by_name['requests'] == [{'license': {'name': 'Apache 2.0'}}], by_name
+          print('OK: generate --licenses completed against real npm + PyPI registries')
+          "
+          echo "::endgroup::"
+
           echo "::group::scan — real network call to OSV.dev, scanning this repo's own real dependencies"
           # Uses this checked-out repo's own real requirements.txt,
           # which genuinely has real, currently-maintained dependencies

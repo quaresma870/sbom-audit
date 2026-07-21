@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sbom_audit.core.license_lookup import LicenseResult
 from sbom_audit.core.manifest_parser import Package
 
 _CYCLONEDX_SPEC_VERSION = "1.5"
@@ -19,13 +20,20 @@ _TOOL_NAME = "sbom-audit"
 _TOOL_VERSION = "0.1.0"
 
 
-def generate_sbom(project_name: str, packages: list[Package]) -> dict:
+def generate_sbom(
+    project_name: str, packages: list[Package], license_results: list[LicenseResult] | None = None,
+) -> dict:
     """Returns a real, schema-valid CycloneDX 1.5 SBOM as a Python
     dict (ready for json.dump). purl uses the standard Package URL
     scheme for PyPI: pkg:pypi/<name>@<version>, per the package-url
-    spec CycloneDX itself references for the purl field."""
+    spec CycloneDX itself references for the purl field.
+
+    license_results, if given, must align 1:1 with packages (i.e. come
+    from check_licenses(packages)) — each component gets a `licenses`
+    entry only when real license data was actually found for it."""
     root_ref = "root-component"
     component_refs = [f"pkg-{i}" for i in range(len(packages))]
+    licenses = license_results or [None] * len(packages)
 
     return {
         "$schema": f"http://cyclonedx.org/schema/bom-{_CYCLONEDX_SPEC_VERSION}.schema.json",
@@ -53,14 +61,22 @@ def generate_sbom(project_name: str, packages: list[Package]) -> dict:
                 "version": pkg.version,
                 "bom-ref": ref,
                 "purl": _purl(pkg),
+                **_licenses_field(lr),
             }
-            for pkg, ref in zip(packages, component_refs, strict=True)
+            for pkg, ref, lr in zip(packages, component_refs, licenses, strict=True)
         ],
         "dependencies": [
             {"ref": root_ref, "dependsOn": component_refs},
             *[{"ref": ref, "dependsOn": []} for ref in component_refs],
         ],
     }
+
+
+def _licenses_field(lr: LicenseResult | None) -> dict:
+    if lr is None or (not lr.spdx_id and not lr.name):
+        return {}
+    license_obj = {"id": lr.spdx_id} if lr.spdx_id else {"name": lr.name}
+    return {"licenses": [{"license": license_obj}]}
 
 
 def _purl(pkg: Package) -> str:

@@ -21,6 +21,10 @@ Early, actively developed. Currently covers:
   `package-lock.json`), and Go (`go.mod`, `go.sum`). Validated against
   the official CycloneDX JSON schema (via `cyclonedx-python-lib`) in
   this repo's own test suite, not just an internal shape assumption.
+  `--licenses` optionally looks up each dependency's license from its
+  registry (PyPI, npm) and populates the CycloneDX `licenses` field —
+  one network call per dependency, so it's opt-in; `generate` stays
+  fast and offline without the flag.
 - **`scan`** — checks a project's dependencies (across all supported
   ecosystems above) against [OSV.dev](https://osv.dev)'s free, open
   vulnerability database. Query pattern adapted directly from the
@@ -60,6 +64,7 @@ pip install .
 
 ```bash
 sbom-audit generate /path/to/your/project --output sbom.json
+sbom-audit generate /path/to/your/project --output sbom.json --licenses
 sbom-audit scan /path/to/your/project
 sbom-audit scan /path/to/your/project --json findings.json
 sbom-audit scan /path/to/your/project --sarif results.sarif
@@ -79,6 +84,7 @@ sbom-audit/
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
 │   │   ├── cra_mapping.py      # SBOM/scan results -> CRA Annex I Part II mapping
 │   │   ├── provenance_check.py # npm/PyPI registry Sigstore attestation lookup
+│   │   ├── license_lookup.py   # npm/PyPI registry license lookup, for --licenses
 │   │   └── models.py
 │   └── reports/
 │       ├── terminal.py           # scan findings table
