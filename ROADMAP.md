@@ -32,6 +32,16 @@ are always reported NOT_AUTOMATABLE rather than guessed at. Output
 carries an explicit disclaimer — informational only, not legal advice
 or a compliance certification.
 
+### Lock file support
+`generate`/`scan` now also parse Poetry's `poetry.lock` and PDM's
+`pdm.lock` — both share the same `[[package]]` TOML structure, so one
+parser (`_parse_toml_lock`) covers both. These give exact resolved
+versions rather than requirements.txt/pyproject.toml's declared
+constraints (`>=2.31.0` doesn't tell you if 2.31.0 or 2.35.2 is what's
+really installed). `pip freeze` output was already covered by the
+existing requirements.txt parser, since its pinned `==` lines match
+the same regex.
+
 ## Next
 
 ### sigstore/cosign provenance verification
@@ -40,12 +50,3 @@ not just checking for known CVEs — a real, separate concern from
 vulnerability scanning. This was part of the original idea for this
 tool and deliberately deferred out of v0.1 to keep the first release
 focused and shippable.
-
-### Lock file support
-requirements.txt/pyproject.toml give declared version *constraints*,
-not necessarily the exact resolved versions actually installed
-(`>=2.31.0` doesn't tell you if 2.31.0 or 2.35.2 is what's really in
-the environment). Parsing `requirements.txt` output from `pip freeze`,
-or a proper lock file format (Poetry's poetry.lock, PDM's pdm.lock),
-would give exact-version accuracy that a version-constraint-only scan
-can't.

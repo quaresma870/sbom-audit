@@ -51,6 +51,30 @@ class TestManifestParsing:
         packages = parse_manifests(tmp_path)
         assert {p.name for p in packages} == {"click"}
 
+    def test_parses_poetry_lock(self, tmp_path):
+        (tmp_path / "poetry.lock").write_text(
+            '[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+            'description = "..."\ncategory = "main"\n\n'
+            '[[package]]\nname = "urllib3"\nversion = "2.2.1"\n'
+        )
+        packages = parse_manifests(tmp_path)
+        by_name = {p.name: p for p in packages}
+        assert by_name["requests"].version == "2.31.0"
+        assert by_name["urllib3"].version == "2.2.1"
+        assert all(p.ecosystem == "PyPI" for p in packages)
+
+    def test_parses_pdm_lock(self, tmp_path):
+        (tmp_path / "pdm.lock").write_text(
+            '[[package]]\nname = "click"\nversion = "8.1.7"\nrequires_python = ">=3.7"\n'
+        )
+        packages = parse_manifests(tmp_path)
+        assert {p.name: p.version for p in packages} == {"click": "8.1.7"}
+
+    def test_malformed_toml_lock_does_not_crash(self, tmp_path):
+        (tmp_path / "poetry.lock").write_text("this is not [ valid toml")
+        (tmp_path / "pdm.lock").write_text("this is not [ valid toml")
+        assert parse_manifests(tmp_path) == []
+
     def test_parses_package_json(self, tmp_path):
         (tmp_path / "package.json").write_text(json.dumps({
             "name": "x",
