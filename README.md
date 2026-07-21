@@ -26,6 +26,14 @@ Early, actively developed. Currently covers:
   vulnerability database. Query pattern adapted directly from the
   sibling [secureaudit](https://github.com/quaresma870/secureaudit)
   repo's already-proven CVE plugin.
+- **`cra-report`** — maps SBOM + `scan` results to the vulnerability-
+  handling requirements in Annex I Part II of the EU Cyber Resilience
+  Act (Regulation (EU) 2024/2847). Only reports SATISFIED/
+  ATTENTION_NEEDED for the points a manifest scan can actually observe
+  (SBOM presence, open CRITICAL/HIGH findings, whether a scan ran);
+  organizational/process requirements (disclosure policy, security
+  contact, update distribution) are always reported NOT_AUTOMATABLE.
+  Informational only — not legal advice or a compliance certification.
 
 See [ROADMAP.md](ROADMAP.md) for what's planned next.
 
@@ -43,6 +51,7 @@ pip install .
 sbom-audit generate /path/to/your/project --output sbom.json
 sbom-audit scan /path/to/your/project
 sbom-audit scan /path/to/your/project --json findings.json
+sbom-audit cra-report /path/to/your/project --output cra.json
 ```
 
 ## Project structure
@@ -50,13 +59,16 @@ sbom-audit scan /path/to/your/project --json findings.json
 ```
 sbom-audit/
 ├── sbom_audit/
-│   ├── cli.py                  # generate, scan
+│   ├── cli.py                  # generate, scan, cra-report
 │   ├── core/
 │   │   ├── manifest_parser.py  # Python/npm/Go manifests -> normalized packages
 │   │   ├── sbom_generator.py   # real CycloneDX 1.5 JSON generation
 │   │   ├── vuln_check.py       # OSV.dev batch vulnerability query
+│   │   ├── cra_mapping.py      # SBOM/scan results -> CRA Annex I Part II mapping
 │   │   └── models.py
-│   └── reports/terminal.py
+│   └── reports/
+│       ├── terminal.py         # scan findings table
+│       └── cra_report.py       # CRA mapping table + JSON
 ├── tests/test_sbom_audit.py    # includes real CycloneDX schema validation
 └── .github/workflows/ci.yml
 ```

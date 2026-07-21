@@ -4,7 +4,9 @@ import json
 
 import pytest
 
+from sbom_audit.core.cra_mapping import CRAStatus, map_findings_to_cra
 from sbom_audit.core.manifest_parser import Package, parse_manifests
+from sbom_audit.core.models import Finding, Severity
 from sbom_audit.core.sbom_generator import generate_sbom
 from sbom_audit.core.vuln_check import OSVQueryError, check_vulnerabilities
 
@@ -242,3 +244,42 @@ class TestVulnerabilityCheck:
 
         with pytest.raises(OSVQueryError, match="Could not query OSV.dev"):
             check_vulnerabilities([Package(name="x", version="1.0")], urlopen_fn=fake_urlopen)
+
+
+class TestCRAMapping:
+    """Only points 1-3 of Annex I Part II are things a manifest scan can
+    actually observe; points 4-8 are organizational/process requirements
+    and must always report NOT_AUTOMATABLE rather than a guessed status."""
+
+    def test_no_components_flags_attention_needed_on_point_1(self):
+        requirements = map_findings_to_cra(component_count=0, findings=[], scanned=False)
+        by_point = {r.point: r for r in requirements}
+        assert by_point["1"].status == CRAStatus.ATTENTION_NEEDED
+
+    def test_components_present_satisfies_point_1(self):
+        requirements = map_findings_to_cra(component_count=5, findings=[], scanned=True)
+        by_point = {r.point: r for r in requirements}
+        assert by_point["1"].status == CRAStatus.SATISFIED
+
+    def test_critical_finding_flags_attention_needed_on_point_2(self):
+        findings = [Finding(module="osv_check", title="x", severity=Severity.CRITICAL, target="pkg==1.0")]
+        requirements = map_findings_to_cra(component_count=1, findings=findings, scanned=True)
+        by_point = {r.point: r for r in requirements}
+        assert by_point["2"].status == CRAStatus.ATTENTION_NEEDED
+
+    def test_only_info_findings_satisfies_point_2(self):
+        findings = [Finding(module="osv_check", title="clean", severity=Severity.INFO, target="1 package(s)")]
+        requirements = map_findings_to_cra(component_count=1, findings=findings, scanned=True)
+        by_point = {r.point: r for r in requirements}
+        assert by_point["2"].status == CRAStatus.SATISFIED
+
+    def test_no_scan_flags_attention_needed_on_point_3(self):
+        requirements = map_findings_to_cra(component_count=1, findings=[], scanned=False)
+        by_point = {r.point: r for r in requirements}
+        assert by_point["3"].status == CRAStatus.ATTENTION_NEEDED
+
+    def test_points_4_through_8_are_not_automatable(self):
+        requirements = map_findings_to_cra(component_count=5, findings=[], scanned=True)
+        by_point = {r.point: r for r in requirements}
+        for point in ("4", "5", "6", "7", "8"):
+            assert by_point[point].status == CRAStatus.NOT_AUTOMATABLE
